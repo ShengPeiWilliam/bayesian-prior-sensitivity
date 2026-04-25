@@ -1,0 +1,82 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{setspace}
+
+\hypersetup{colorlinks=true, urlcolor=blue!60!black, citecolor=blue!60!black}
+\setstretch{1.1}
+
+\title{\vspace{-1.5cm}\normalsize\textbf{Final Project Proposal:\\
+Prior Sensitivity in Bayesian Logistic Regression:\\
+A Small-Sample Medical Study}}
+\author{
+    William Chen\\
+    \textit{University of California, Irvine}\\
+    Instructor: Prof.\ Weining Shen\\
+    \textit{Stat 205P: Bayesian Data Analysis}
+}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section*{Introduction}
+
+This project applies Bayesian logistic regression to a small medical
+dataset to examine how prior choice shapes posterior inference.
+A fundamental property of Bayesian inference is that the influence
+of the prior diminishes as sample size grows. In small clinical
+studies, common in medicine due to cost and ethical constraints,
+prior choice can substantially alter conclusions. Understanding
+this dependence is critical for practitioners who must choose
+priors carefully and communicate uncertainty honestly.
+
+\section*{Dataset}
+
+I will use the \texttt{birthwt} dataset ($n = 189$) from R's
+\texttt{MASS} package, collected at Baystate Medical Center,
+Springfield, MA (1986). The binary outcome
+is low birth weight ($< 2.5$ kg), and predictors include maternal
+age, weight, race, smoking status during pregnancy, history of
+previous premature labour (\texttt{ptd}), history of hypertension,
+uterine irritability, and number of physician visits during the
+first trimester.
+
+\section*{Methods}
+
+Two analyses are planned:
+
+\begin{enumerate}
+    \item \textbf{Prior Sensitivity Analysis} (full data, $n = 189$):
+    Fit Bayesian logistic regression under three priors: diffuse
+    $\mathcal{N}(0, 100)$, weakly informative $\mathcal{N}(0, 2.5)$,
+    and clinically informative priors motivated by medical literature
+    (e.g., positive coefficients for smoking and hypertension).
+    Compare posterior means and 95\% credible intervals across
+    all three models.
+
+    \item \textbf{Subsampling Experiment}: Repeatedly subsample at
+    $n \in \{20, 40, 80, 189\}$ and refit all three models. Visualize
+    how posterior distributions and credible interval widths evolve
+    with sample size, illustrating the transition from
+    prior-dominated to likelihood-dominated inference.
+\end{enumerate}
+
+All analyses will be conducted in R using \texttt{rstanarm} and
+visualized with \texttt{bayesplot} and \texttt{ggplot2}.
+
+\section*{Goals}
+
+\begin{itemize}
+    \item Demonstrate how prior sensitivity varies with sample size
+    in a real medical context.
+    \item Identify which risk factors (e.g., smoking, hypertension)
+    are most affected by prior choice under small $n$.
+    \item Provide practical guidance on prior selection for small
+    clinical datasets, contrasting diffuse, weakly informative,
+    and domain-informed priors.
+\end{itemize}
+
+\end{document}
