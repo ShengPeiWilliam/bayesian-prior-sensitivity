@@ -37,12 +37,11 @@ priors carefully and communicate uncertainty honestly.
 
 I will use the \texttt{birthwt} dataset ($n = 189$) from R's
 \texttt{MASS} package, collected at Baystate Medical Center,
-Springfield, MA (1986). The binary outcome
-is low birth weight ($< 2.5$ kg), and predictors include maternal
-age, weight, race, smoking status during pregnancy, history of
-previous premature labour (\texttt{ptd}), history of hypertension,
-uterine irritability, and number of physician visits during the
-first trimester.
+Springfield, MA (1986). The binary outcome is low birth weight
+($< 2.5$ kg), and predictors include maternal age, weight, race,
+smoking status during pregnancy, history of previous premature
+labour (\texttt{ptd}), history of hypertension, uterine irritability,
+and number of physician visits during the first trimester.
 
 \section*{Methods}
 
@@ -54,8 +53,7 @@ Two analyses are planned:
     $\mathcal{N}(0, 100)$, weakly informative $\mathcal{N}(0, 2.5)$,
     and clinically informative priors motivated by medical literature
     (e.g., positive coefficients for smoking and hypertension).
-    Compare posterior means and 95\% credible intervals across
-    all three models.
+    Compare posterior means and 95\% credible intervals across models.
 
     \item \textbf{Subsampling Experiment}: Repeatedly subsample at
     $n \in \{20, 40, 80, 189\}$ and refit all three models. Visualize
