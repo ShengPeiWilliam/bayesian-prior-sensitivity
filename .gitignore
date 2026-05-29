@@ -57,3 +57,5 @@ rsconnect/
 *.fdb_latexmk
 
 .DS_Store
+
+*.rds
