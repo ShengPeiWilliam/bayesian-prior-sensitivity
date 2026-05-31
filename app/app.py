@@ -3,9 +3,13 @@ import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Birthweight Risk Predictor", layout="centered")
 st.title("Low Birth Weight Risk Predictor")
-st.markdown("Enter patient characteristics to compare predictions across three Bayesian priors.")
+st.markdown("**Prior Sensitivity in Bayesian Logistic Regression: A Small-Sample Medical Study**")
+st.markdown("**William Chen · Stat 205P: Bayesian Data Analysis · UC Irvine**")
+st.markdown("[![GitHub](https://img.shields.io/badge/GitHub-bayesian--prior--sensitivity-181717?logo=github)](https://github.com/ShengPeiWilliam/bayesian-prior-sensitivity)")
+st.markdown("---")
+st.markdown("**Enter patient characteristics to compare predicted risk across three Bayesian priors.**")
+
 
 # --- Input Form ---
 with st.form("patient_form"):
@@ -13,14 +17,14 @@ with st.form("patient_form"):
 
     with col1:
         age   = st.slider("Maternal Age", 14, 45, 25)
-        lwt   = st.slider("Pre-pregnancy Weight (lbs)", 80, 250, 120)
         race  = st.selectbox("Race", options=["1","2","3"],
-                              format_func=lambda x: {"1":"White","2":"Black","3":"Other"}[x])
+                            format_func=lambda x: {"1":"White","2":"Black","3":"Other"}[x])
         smoke = st.selectbox("Smoking During Pregnancy", options=["0","1"],
-                              format_func=lambda x: "Yes" if x=="1" else "No")
+                            format_func=lambda x: "Yes" if x=="1" else "No")
+        ptl = st.number_input("Previous Premature Labours", min_value=0, max_value=3, value=0)
 
     with col2:
-        ptl = st.number_input("Previous Premature Labours", min_value=0, max_value=3, value=0)
+        lwt = st.slider("Pre-pregnancy Weight (lbs)", 80, 250, 120)
         ht  = st.selectbox("History of Hypertension", options=["0","1"],
                             format_func=lambda x: "Yes" if x=="1" else "No")
         ui  = st.selectbox("Uterine Irritability", options=["0","1"],
