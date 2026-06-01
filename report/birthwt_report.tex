@@ -1,0 +1,317 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+
+\hypersetup{colorlinks=true, urlcolor=blue!60!black, citecolor=blue!60!black}
+\setstretch{1.1}
+\setlength{\parindent}{0pt}
+
+\title{\textbf{Prior Sensitivity in Bayesian Logistic Regression:\\
+A Small-Sample Medical Study}}
+\author{
+    William Chen\\
+    \textit{University of California, Irvine}\\
+    Instructor: Prof.\ Weining Shen\\
+    \textit{Stat 205P: Bayesian Data Analysis}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+% -------------------------------------------------------
+\begin{abstract}
+In Bayesian logistic regression, the choice of prior is
+inconsequential when data are plentiful but decisive when they are
+scarce.
+We demonstrate this using the \texttt{birthwt} dataset ($n = 189$),
+comparing three priors (diffuse $\mathcal{N}(0, 100)$, weakly
+informative $\mathcal{N}(0, 2.5)$, and a clinically informative prior)
+across the full sample and subsamples of $n \in \{20, 40, 80\}$.
+At full data all three are interchangeable (AUC $\approx 0.747$).
+Under small samples they are not: at $n = 20$ the diffuse prior
+collapses under complete separation
+($\hat{\beta}_{\texttt{smoke1}} = 203$) while the regularizing priors
+stay stable.
+Crucially, how quickly a coefficient escapes prior sensitivity is
+governed not by sample size but by the number of positive cases for
+that predictor: smoking stabilizes by $n = 40$, whereas hypertension
+(only 6.3\% of patients) remains unstable until $n \approx 80$.
+For small clinical datasets the recommendation is concrete: prefer
+a weakly informative prior to a diffuse one, and treat rare predictors
+with particular caution, since they are the last to shed the prior's
+influence.
+\end{abstract}
+
+% -------------------------------------------------------
+\section{Introduction}
+
+In Bayesian analysis the prior's influence is not constant: when data
+are abundant the likelihood dominates and the prior fades into the
+background, but when samples are scarce it can substantially shape, and
+even distort, the posterior. This matters most in clinical research,
+where small samples are the rule rather than the exception.
+
+This report presents a prior sensitivity analysis of Bayesian logistic
+regression using the \texttt{birthwt} dataset ($n = 189$), comparing
+three priors that span from diffuse $\mathcal{N}(0, 100)$ through
+weakly informative $\mathcal{N}(0, 2.5)$ to a clinically informative
+prior. Refitting each across sample sizes
+($n \in \{20, 40, 80, 189\}$), we find that the priors are
+interchangeable at full data but diverge sharply at small $n$, and
+that this sensitivity is governed not by sample size alone but by
+predictor rarity, with direct implications for clinical datasets where
+the most important risk factors are often uncommon.
+
+% -------------------------------------------------------
+\section{Data}
+
+\subsection{Dataset Overview}
+
+The \texttt{birthwt} dataset ($n = 189$) was collected at Baystate
+Medical Center, Springfield, MA (1986).
+The binary outcome is low birth weight ($< 2.5$ kg), with 130 normal
+and 59 low birth weight cases (31.2\% positive rate).
+All analyses use \texttt{stan\_glm} (\texttt{rstanarm}), fit with
+4 chains $\times$ 1000 iterations.
+
+\subsection{Predictors}
+
+Predictors include maternal age (\texttt{age}), pre-pregnancy weight
+(\texttt{lwt}), race (3-level factor), smoking status during pregnancy
+(\texttt{smoke}), prior preterm labor (\texttt{ptl}), hypertension
+history (\texttt{ht}), uterine irritability (\texttt{ui}), and
+first-trimester physician visits (\texttt{ftv}).
+Continuous features show low pairwise correlations (max $|r| = 0.22$),
+suggesting no multicollinearity concerns.
+Among the binary predictors, the positive class is uncommon and
+unevenly distributed: smoking is present in 74 of 189 mothers,
+uterine irritability in 28, and hypertension in only 12. As the
+subsampling results show, this spread becomes consequential under
+small samples.
+
+% -------------------------------------------------------
+\section{Methods}
+
+\subsection{Prior Specification}
+
+Three prior configurations were evaluated:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+Model & Coefficients & Intercept \\
+\midrule
+Diffuse      & $\mathcal{N}(0,\,100)$
+             & $\mathcal{N}(0,\,100)$ \\
+Weak         & $\mathcal{N}(0,\,2.5)$
+             & $\mathcal{N}(0,\,10)$  \\
+Informative  & \texttt{smoke}, \texttt{ht}: $\mathcal{N}(1,\,0.5)$;
+               others $\mathcal{N}(0,\,1)$
+             & $\mathcal{N}(0,\,5)$   \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The informative prior encodes the clinical knowledge that smoking
+and hypertension are established risk factors for low birth weight.
+All other predictors receive a weakly informative $\mathcal{N}(0,1)$
+prior.
+
+\subsection{Analyses}
+
+Three analyses were conducted:
+
+\begin{enumerate}
+    \item \textbf{Prior sensitivity at full data} ($n = 189$):
+    posterior coefficient comparison, LOO model comparison, and AUC.
+
+    \item \textbf{Subsampling experiment}:
+    all three models were refit at $n \in \{20, 40, 80, 189\}$
+    to track posterior mean convergence and credible interval width
+    across sample sizes.
+
+    \item \textbf{Predictive performance}:
+    AUC was computed at each sample size and prior to assess whether
+    informative priors improve prediction under small $n$.
+\end{enumerate}
+
+Convergence was verified for all models via $\hat{R} \leq 1.002$
+and visual inspection of trace plots.
+
+% -------------------------------------------------------
+\section{Results}
+
+\subsection{Full Data ($n = 189$): Priors Have Little Effect}
+
+At $n = 189$, all three models produce nearly identical posterior
+estimates and converge well.
+Table~\ref{tab:coef} reports posterior means for the two clinically
+relevant predictors, and Figure~\ref{fig:coef} shows the full
+coefficient comparison across all predictors.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Variable & Diffuse & Weak & Informative \\
+\midrule
+\texttt{smoke1} & 0.983 & 0.933 & 0.915 \\
+\texttt{ht1}    & 1.994 & 1.827 & 1.311 \\
+\bottomrule
+\end{tabular}
+\caption{Posterior means (log-odds) for the two clinically targeted
+predictors at $n = 189$. These are the variables for which the
+informative prior encodes directional clinical knowledge.}
+\label{tab:coef}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../figures/coef_continuous.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../figures/coef_binary.png}
+    \end{minipage}
+    \caption{Posterior coefficients across priors at $n = 189$.
+    Left: continuous predictors. Right: categorical/binary predictors.
+    Points = posterior mean; bars = 95\% credible interval.}
+    \label{fig:coef}
+\end{figure}
+
+The informative prior modestly shrinks \texttt{ht1} (from 1.994 to
+1.311), but this difference is small in practical terms.
+Table~\ref{tab:loo_auc} reports LOO and AUC for all three models;
+the differences are negligible, confirming that prior choice has
+little practical effect at $n = 189$.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Model & LOOIC & AUC \\
+\midrule
+Diffuse     & 223.85 & 0.746 \\
+Weak        & 223.32 & 0.747 \\
+Informative & 220.43 & 0.748 \\
+\bottomrule
+\end{tabular}
+\caption{LOO model comparison and AUC at full data ($n = 189$).
+Lower LOOIC indicates better fit.}
+\label{tab:loo_auc}
+\end{table}
+
+With 189 observations, the likelihood dominates and prior choice
+is inconsequential.
+
+\subsection{Subsampling: Prior Sensitivity at Small $n$}
+
+To examine how prior influence changes with sample size, we refit all
+three models at $n \in \{20, 40, 80, 189\}$.
+We focus on \texttt{smoke1} and \texttt{ht1}, the two predictors
+for which the informative prior encodes directional knowledge,
+as these show the largest divergence across priors at small $n$
+(Figure~\ref{fig:convergence}).
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../figures/smoke_convergence.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../figures/ht_convergence.png}
+    \end{minipage}
+    \caption{Posterior mean convergence across sample sizes.
+    Left: \texttt{smoke1}. Right: \texttt{ht1}.
+    Shaded bands = 95\% credible intervals.}
+    \label{fig:convergence}
+\end{figure}
+
+Under the diffuse prior, complete separation produces implausible
+estimates at $n = 20$ ($\hat{\beta}_{\texttt{smoke1}} = 203$,
+$\hat{\beta}_{\texttt{ht1}} = 109$).
+\texttt{smoke1} recovers by $n = 40$, but \texttt{ht1} remains
+unstable ($\hat{\beta} = 82.4$): hypertension affects only 12 of
+189 patients (6.3\%), so small subsamples rarely contain enough
+\texttt{ht} = 1 cases to resolve separation.
+By $n = 80$, all models stabilize.
+The weak and informative priors remain in clinically plausible ranges
+throughout.
+
+\subsection{Predictive Performance}
+
+We assess whether prior choice affects predictive performance, and
+whether a more informative prior offers any advantage at small $n$
+(Figure~\ref{fig:auc}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.45\textwidth]{../figures/auc.png}
+    \caption{In-sample AUC by sample size and prior.
+    Dashed line = random classifier baseline (AUC = 0.5).}
+    \label{fig:auc}
+\end{figure}
+
+The diffuse prior achieves AUC = 1.0 at $n = 20$, a direct consequence
+of complete separation: a model that perfectly separates the training
+data is not a good model, it is an overfit one.
+The informative prior, while showing lower in-sample AUC at small $n$
+(0.905 at $n = 20$), produces more stable and trustworthy estimates.
+By $n = 189$, all three priors converge to AUC $\approx 0.747$.
+
+% -------------------------------------------------------
+\section{Discussion}
+
+\paragraph{The prior is not neutral at small $n$.}
+``Letting the data speak'' assumes the data are loud enough to speak;
+at $n = 20$ they are not, and a diffuse prior actively destabilizes
+inference instead of staying out of the way.
+
+\paragraph{Rarity acts as a threshold, not a gradient.}
+What decides when a coefficient becomes trustworthy is not the
+sample size but the number of positive cases for that predictor. At
+$n = 20$ every coefficient is unstable: even smoking, the most common
+predictor, cannot escape separation in so small a subsample. By
+$n = 40$ only hypertension remains affected. Uterine irritability,
+though rarer than smoking (28 versus 74 positive cases), recovers just
+as quickly, so the effect is not a smooth function of rarity but a
+threshold: with only 12 positive cases in the full data, hypertension's
+subsamples rarely contain enough \texttt{ht} = 1 observations to resolve
+separation.
+
+\paragraph{Limitations.}
+AUC is reported in-sample and likely overstates predictive performance,
+especially at small $n$.
+The subsampling experiment uses a single fixed random subset per
+sample size; averaging over multiple draws would give a more stable
+picture of convergence thresholds.
+
+% -------------------------------------------------------
+\section{Conclusion}
+
+Prior choice matters most when data are scarcest. At $n = 20$ a
+diffuse prior produces unstable, uninterpretable posteriors while a
+weakly informative prior restores stability; by $n = 189$ the
+differences are negligible. This threshold is not uniform, however:
+rare predictors such as hypertension stay prior-sensitive longest,
+since stability depends on the number of positive cases, not the
+sample size alone.
+
+For small clinical datasets the takeaway is direct: make a weakly
+informative prior the default rather than a diffuse one, and treat
+rare predictors with particular caution, since they are the last to
+shed the prior's influence.
+
+\end{document}
