@@ -1,7 +1,4 @@
 # Prior Sensitivity in Bayesian Logistic Regression: A Small-Sample Medical Study
-
-Stat 205P: Bayesian Data Analysis · UC Irvine · William Chen
-
 [![Full Report](https://img.shields.io/badge/📄_Read_Full_Report-PDF-blue?style=for-the-badge)](report/birthwt_report.pdf)
 
 Bayesian logistic regression on the `birthwt` dataset (n=189), comparing three prior specifications, diffuse N(0,100), weakly informative N(0,2.5), and clinically informed, across sample sizes n ∈ {20, 40, 80, 189}. At full sample all three priors converge (AUC ≈ 0.747, LOOIC difference < 4). At n=20 the diffuse prior collapses under complete separation (β̂_smoke = 203), while the regularizing priors stay stable. Crucially, how quickly a coefficient stabilizes is governed not by sample size but by the number of positive cases for that predictor: smoking (74/189) stabilizes by n=40, while hypertension (12/189) persists until n=80, confirmed across 100 repeated subsampling draws.
