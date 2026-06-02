@@ -8,8 +8,7 @@ st.markdown("**Prior Sensitivity in Bayesian Logistic Regression: A Small-Sample
 st.markdown("**William Chen · Stat 205P: Bayesian Data Analysis · UC Irvine**")
 st.markdown("[![GitHub](https://img.shields.io/badge/GitHub-bayesian--prior--sensitivity-181717?logo=github)](https://github.com/ShengPeiWilliam/bayesian-prior-sensitivity)")
 st.markdown("---")
-st.markdown("**Enter patient characteristics to compare predicted risk across three Bayesian priors.**")
-
+st.markdown("**Enter patient characteristics to see how prior choice matters across different data sizes.**")
 
 # --- Input Form ---
 with st.form("patient_form"):
@@ -35,52 +34,69 @@ with st.form("patient_form"):
 
 # --- Prediction ---
 if submitted:
-    payload = {
+    base_payload = {
         "age": int(age), "lwt": int(lwt),
         "race": race,    "smoke": smoke,
         "ptl": int(ptl), "ht": ht,
         "ui": ui,        "ftv": int(ftv)
     }
 
-    try:
-        response = requests.post("http://localhost:8000/predict", json=payload, timeout=30)
-        result   = response.json()
+    all_results = {}
+    n_sizes = [20, 40, 80, 189]
 
-        # Table
-        df = pd.DataFrame({
-            "Prior":    ["Diffuse", "Weak", "Informative"],
-            "Mean":     [f"{result[k]['mean'][0]:.1%}"     for k in ["diffuse","weak","informative"]],
-            "CI Lower": [f"{result[k]['ci_lower'][0]:.1%}" for k in ["diffuse","weak","informative"]],
-            "CI Upper": [f"{result[k]['ci_upper'][0]:.1%}" for k in ["diffuse","weak","informative"]]
-        })
+    try:
+        for n in n_sizes:
+            payload = {**base_payload, "n": n}
+            response = requests.post("http://localhost:8000/predict", json=payload, timeout=30)
+            all_results[n] = response.json()
 
         st.subheader("Predicted Risk of Low Birth Weight")
-        st.dataframe(df, hide_index=True, use_container_width=True)
+        st.caption("Same patient, same prior — but trained on different amounts of data. Notice how the CIs widen at small n, especially for the diffuse prior.")
 
-        # Chart
-        means  = [result[k]["mean"][0]     for k in ["diffuse","weak","informative"]]
-        lowers = [result[k]["ci_lower"][0] for k in ["diffuse","weak","informative"]]
-        uppers = [result[k]["ci_upper"][0] for k in ["diffuse","weak","informative"]]
-        colors = ["#E41A1C", "#377EB8", "#4DAF4A"]
-        labels = ["Diffuse", "Weak", "Informative"]
+        colors = {"Diffuse": "#E41A1C", "Weak": "#377EB8", "Informative": "#4DAF4A"}
+        priors = ["informative", "weak", "diffuse"]
+        prior_labels = ["Informative", "Weak", "Diffuse"]
 
-        fig, ax = plt.subplots(figsize=(8, 3))
-        for i, (mean, lower, upper, color, label) in enumerate(zip(means, lowers, uppers, colors, labels)):
-            ax.plot([lower, upper], [i, i], color=color, linewidth=2.5)
-            ax.plot(mean, i, "o", color=color, markersize=9, zorder=5)
+        # 2x2 grid of expanders
+        row1 = st.columns(2)
+        row2 = st.columns(2)
+        grid = [row1[0], row1[1], row2[0], row2[1]]
 
-        ax.set_yticks(range(3))
-        ax.set_yticklabels(labels, fontsize=12)
-        ax.set_xlabel("Predicted Probability", fontsize=11)
-        ax.set_xlim(0, 1)
-        ax.axvline(0.5, color="grey", linestyle="--", linewidth=1)
-        ax.set_title("Posterior Predictive Probability by Prior\n(point = mean, line = 95% CI)", fontsize=12)
-        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
-        ax.grid(axis="x", alpha=0.3)
-        ax.spines[["top","right"]].set_visible(False)
+        for col, n in zip(grid, n_sizes):
+            result = all_results[n]
+            means  = [result[k]["mean"][0]     for k in priors]
+            lowers = [result[k]["ci_lower"][0] for k in priors]
+            uppers = [result[k]["ci_upper"][0] for k in priors]
 
-        st.pyplot(fig)
-        plt.close()
+            fig, ax = plt.subplots(figsize=(5, 2.8))
+            for i, (mean, lower, upper, label) in enumerate(zip(means, lowers, uppers, prior_labels)):
+                color = colors[label]
+                ax.plot([lower, upper], [i, i], color=color, linewidth=2.5)
+                ax.plot(mean, i, "o", color=color, markersize=9, zorder=5)
+
+            ax.set_yticks(range(3))
+            ax.set_yticklabels(prior_labels, fontsize=11)
+            ax.set_xlim(0, 1)
+            n_labels = {20: "n = 20  (very small clinic)", 40: "n = 40  (small clinic)",
+                        80: "n = 80  (medium clinic)", 189: "n = 189  (full dataset)"}
+            ax.set_title(n_labels[n], fontsize=11, fontweight="bold")
+            ax.axvline(0.5, color="grey", linestyle="--", linewidth=1)
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x:.0%}"))
+            ax.set_xlabel("Predicted Probability", fontsize=10)
+            ax.grid(axis="x", alpha=0.3)
+            ax.spines[["top","right"]].set_visible(False)
+            plt.tight_layout()
+
+            col.pyplot(fig)
+            plt.close()
+
+            df_n = pd.DataFrame({
+                "Prior":    prior_labels[::-1],
+                "Mean":     [f"{result[k]['mean'][0]:.1%}"     for k in priors[::-1]],
+                "CI Lower": [f"{result[k]['ci_lower'][0]:.1%}" for k in priors[::-1]],
+                "CI Upper": [f"{result[k]['ci_upper'][0]:.1%}" for k in priors[::-1]],
+            })
+            col.dataframe(df_n, hide_index=True, use_container_width=True)
 
     except Exception as e:
         st.error(f"API error: {e}")
