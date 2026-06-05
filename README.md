@@ -7,9 +7,11 @@ Bayesian logistic regression on the `birthwt` dataset (n=189), comparing three p
 
 ## Motivation
 
-Medical datasets are often small. Rare conditions, limited enrollment, and single-center studies make n < 100 the norm in many clinical settings, not the exception. In these settings, the choice of prior is no longer a minor technical detail: it actively shapes what the model concludes.
+Most modeling projects optimize for accuracy. This one asks a different question: when should you trust your model's output at all?
 
-This project uses prior sensitivity analysis to understand how much of a posterior estimate is coming from the data versus from the prior, and at what sample size that balance shifts. The goal is practical: when facing a small clinical dataset, knowing which predictors are most vulnerable to prior influence (and why) changes how carefully you need to choose your priors.
+In clinical settings, n < 100 is common. Under small samples, a model can achieve near-perfect accuracy not because it predicts well, but because it has memorized the data under complete separation. Standard metrics won't tell you this. Pareto k̂ diagnostics will.
+
+This project treats model building as a diagnostic exercise: comparing three priors across subsamples not to find the best-performing one, but to expose where each prior's influence dominates the data, and why some predictors are more vulnerable than others. The answer (predictor rarity, not sample size) is the kind of finding that changes how you approach a new dataset before you even fit a model.
 
 --- 
 ## Interactive Demo
