@@ -7,18 +7,16 @@ Bayesian logistic regression on the `birthwt` dataset (n=189), comparing three p
 
 ## Motivation
 
-Healthcare is a domain where decisions must be made under genuine uncertainty, a new patient walks in, data is scarce, and yet a clinical judgment is required. In Bayesian terms, this is the prior problem: when the data cannot speak loudly, what we believe before seeing it shapes what we conclude afterward.
+Medical datasets are often small. Rare conditions, limited enrollment, and single-center studies make n < 100 the norm in many clinical settings, not the exception. In these settings, the choice of prior is no longer a minor technical detail: it actively shapes what the model concludes.
 
-This project asks: how sensitive are posterior inferences to prior choice, and does that sensitivity depend on sample size? The answer turns out to depend not on sample size alone, but on **predictor rarity**, a finding with direct implications for clinical datasets where the most important risk factors are often uncommon.
-
-To explore this interactively, the fitted models are deployed on AWS S3 and EC2, so rather than a static table of coefficients, you can input a patient's characteristics and see how each prior responds differently.
+This project uses prior sensitivity analysis to understand how much of a posterior estimate is coming from the data versus from the prior, and at what sample size that balance shifts. The goal is practical: when facing a small clinical dataset, knowing which predictors are most vulnerable to prior influence (and why) changes how carefully you need to choose your priors.
 
 --- 
 ## Interactive Demo
 
 [![Streamlit App](https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit)](http://13.221.116.154:8501)
 
-Enter a patient's characteristics (age, smoking status, race, etc.) and the app returns predicted probability of low birth weight from all three priors, trained at four different sample sizes. The key insight is visible in the confidence intervals: at n=20, the diffuse prior collapses to near-certainty while the informative prior retains honest uncertainty.
+Enter a patient's characteristics (age, smoking status, race, etc.) and the app returns predicted probability of low birth weight from all three priors across four sample sizes. At n=20, the diffuse prior collapses to near-certainty while the informative prior retains honest uncertainty.
 
 ---
 
@@ -26,19 +24,23 @@ Enter a patient's characteristics (age, smoking status, race, etc.) and the app 
 
 **Why three priors?**
 
-Diffuse N(0,100) represents a common default that lets the data speak freely. Weakly informative N(0,2.5) acts as a regularizer without encoding strong beliefs. The clinically informed prior sets N(1,0.5) for `smoke` and `ht`, corresponding to OR ≈ 2.7 (±2 SD: OR ∈ [1.4, 7.4]), consistent with published estimates of the smoking–adverse birth outcome association.
-
-**Why repeated subsampling?**
-
-A single random draw at each n risks mistaking a lucky (or unlucky) sample for a general pattern. Running 100 independent draws per n and recording the explosion rate (|β̂| > 10) converts a single observation into a distributional claim: at n=40, hypertension still explodes in 17.6% of draws; at n=80, the rate reaches zero.
+- **Diffuse N(0,100)**: a common default that lets the data speak freely
+- **Weak N(0,2.5)**: acts as a regularizer without encoding strong beliefs
+- **Informative**: sets N(1,0.5) for `smoke` and `ht`, corresponding to OR ≈ 2.7 (±2 SD: OR ∈ [1.4, 7.4]), in the expected direction given published risk estimates
 
 **Why LOOIC and Pareto k̂ instead of in-sample AUC?**
 
-The diffuse prior achieves AUC=1.0 at n=20, not because it predicts well, but because complete separation lets it perfectly memorize the training data. Pareto k̂ diagnostics confirm this: 20 of 20 observations have k̂ > 0.7 under the diffuse prior at n=20, making the LOO estimates unreliable. The informative prior produces only 1 problematic observation at the same sample size.
+Under complete separation, in-sample AUC becomes a measure of overfitting rather than predictive ability. LOOIC and Pareto k̂ diagnostics provide a more honest assessment: k̂ > 0.7 flags observations where the LOO estimate is unreliable, directly exposing which prior and sample size combinations are unstable.
+
+**Why repeated subsampling?**
+
+A single random draw at each n risks mistaking a lucky (or unlucky) sample for a general pattern. Running 100 independent draws per n and recording the explosion rate (|β̂| > 10) converts a single observation into a distributional claim, making the stability thresholds reproducible rather than coincidental.
 
 ---
 
 ## Key Results
+
+At full data all three priors are interchangeable; under small samples they diverge sharply, with the diffuse prior collapsing under complete separation while the informative prior remains stable throughout. Crucially, the stabilization threshold is governed not by sample size but by positive-case count for each predictor.
 
 **Full data (n=189): prior choice is inconsequential**
 
@@ -56,7 +58,10 @@ The diffuse prior achieves AUC=1.0 at n=20, not because it predicts well, but be
 | 20 | Weak | 0.952 | 28.1 | 5 |
 | 20 | Informative | 0.905 | 27.1 | 1 |
 | 40 | Diffuse | 0.808 | 65.3 | 4 |
+| 40 | Weak | 0.799 | 61.1 | 0 |
 | 40 | Informative | 0.750 | 56.3 | 1 |
+| 80 | Diffuse | 0.789 | 105.9 | 0 |
+| 80 | Weak | 0.785 | 102.4 | 1 |
 | 80 | Informative | 0.777 | 98.2 | 0 |
 
 **Repeated subsampling (100 draws per n, diffuse prior)**
@@ -71,7 +76,7 @@ The diffuse prior achieves AUC=1.0 at n=20, not because it predicts well, but be
 
 ## Reflections & Next Steps
 
-The threshold effect, not a gradient but a step function governed by positive case count, is the finding most likely to generalize to other clinical datasets. Rare binary predictors are precisely the ones clinicians care most about, and they are the last to shed prior influence.
+The key finding is a threshold effect, not a gradient: stabilization is a step function governed by positive-case count. Rare binary predictors are precisely the ones clinicians care most about, and they are the last to shed prior influence. This pattern is likely to generalize to other clinical datasets.
 
 Next steps:
 - **k-fold CV** at small n: LOO becomes unreliable when k̂ > 0.7; 10-fold CV would provide more trustworthy estimates at n=20
