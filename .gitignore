@@ -55,10 +55,10 @@ rsconnect/
 *.toc
 *.fls
 *.fdb_latexmk
-
+*.tex
 .DS_Store
 
 *.rds
 
 report/*proposal*
-*.tex
+report/birthwt_report.tex
