@@ -16,10 +16,11 @@ This project treats model building as a diagnostic exercise: comparing three pri
 --- 
 ## Interactive Demo
 
-[![Streamlit App](https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit)](http://13.221.116.154:8501)
+![Streamlit App](https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit)
 
 Enter a patient's characteristics (age, smoking status, race, etc.) and the app returns predicted probability of low birth weight from all three priors across four sample sizes. At n=20, the diffuse prior collapses to near-certainty while the informative prior retains honest uncertainty.
 
+<img src="figures/demo_screenshot.png" width="700"/>
 ---
 
 ## Design Decisions
