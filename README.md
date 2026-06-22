@@ -3,8 +3,6 @@
 
 Bayesian logistic regression on the `birthwt` dataset (n=189), comparing three prior specifications, diffuse N(0,100), weakly informative N(0,2.5), and clinically informed, across sample sizes n ∈ {20, 40, 80, 189}. At full sample all three priors converge (AUC ≈ 0.747, LOOIC difference < 4). At n=20 the diffuse prior collapses under complete separation while the regularizing priors stay stable. Crucially, how quickly a coefficient stabilizes is governed not by sample size but by the number of positive cases for that predictor: smoking (74/189) stabilizes by n=40, while hypertension (12/189) persists until n=80, confirmed across 100 repeated subsampling draws.
 
----
-
 ## Motivation
 
 Most modeling projects optimize for accuracy. This one asks a different question: when should you trust your model's output at all?
@@ -13,7 +11,6 @@ In clinical settings, n < 100 is common. Under small samples, a model can achiev
 
 This project treats model building as a diagnostic exercise: comparing three priors across subsamples not to find the best-performing one, but to expose where each prior's influence dominates the data, and why some predictors are more vulnerable than others. The answer (predictor rarity, not sample size) is the kind of finding that changes how you approach a new dataset before you even fit a model.
 
---- 
 ## Interactive Demo
 
 ![Streamlit App](https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit)
@@ -37,8 +34,6 @@ Under complete separation, in-sample AUC becomes a measure of overfitting rather
 **Why repeated subsampling?**
 
 A single random draw at each n risks mistaking a lucky (or unlucky) sample for a general pattern. Running 100 independent draws per n and recording the explosion rate (|β̂| > 10) converts a single observation into a distributional claim, making the stability thresholds reproducible rather than coincidental.
-
----
 
 ## Key Results
 
@@ -74,8 +69,6 @@ A single random draw at each n risks mistaking a lucky (or unlucky) sample for a
 | ui1 | 17.5% | 3.0% | 1% |
 | ht1 | 31.1% (+26% undefined) | 17.6% | 0% |
 
----
-
 ## Reflections & Next Steps
 
 The key finding is a threshold effect, not a gradient: stabilization is a step function governed by positive-case count. Rare binary predictors are precisely the ones clinicians care most about, and they are the last to shed prior influence. This pattern is likely to generalize to other clinical datasets.
@@ -84,8 +77,6 @@ Next steps:
 - **k-fold CV** at small n: LOO becomes unreliable when k̂ > 0.7; 10-fold CV would provide more trustworthy estimates at n=20
 - **Multi-dataset validation**: replicate the rarity threshold finding on other small clinical datasets to assess generalizability
 - **Hierarchical priors**: partial pooling across predictor groups as an alternative to hand-specifying informative priors
-
----
 
 ## Repository
 
