@@ -1,2 +1,3 @@
 *.ipynb linguist-vendored=R
+*.html linguist-vendored
 *.tex linguist-vendored
