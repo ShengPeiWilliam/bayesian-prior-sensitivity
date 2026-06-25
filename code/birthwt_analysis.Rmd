@@ -1,0 +1,704 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.19.1
+  kernelspec:
+    display_name: R
+    language: R
+    name: ir
+---
+
+# Prior Sensitivity in Bayesian Logistic Regression
+
+
+## 1. Data & EDA
+
+```{r}
+library(MASS)        # Built-in dataset — provides the birthwt dataset
+library(rstanarm)    # Bayesian logistic regression via Stan
+library(bayesplot)   # Visualizing posterior distributions and predictive checks
+library(pROC)        # Computing and comparing ROC curves and AUC
+library(ggplot2)     # Custom data visualization
+library(dplyr)       # Data manipulation for subsampling experiment
+library(tidyr)
+data(birthwt)
+```
+
+### Dataset Overview
+
+```{r}
+str(birthwt)
+```
+
+```{r}
+birthwt$race  <- as.factor(birthwt$race)
+birthwt$smoke <- as.factor(birthwt$smoke)
+birthwt$ht    <- as.factor(birthwt$ht)
+birthwt$ui    <- as.factor(birthwt$ui)
+
+summary(birthwt)
+```
+
+```{r}
+sum(is.na(birthwt))
+
+table(birthwt$low)
+```
+
+### Feature Description
+
+
+#### Class balance
+
+```{r}
+ggplot(data = birthwt, aes(x = factor(low, labels = c("Normal", "Low Birth Weight")))) +
+  geom_bar(fill = c("#4CAF50", "#F44336")) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) +
+  labs(title = "Class Balance of Low Birth Weight",
+       x = "Birth Weight Status",
+       y = "Count") +
+  theme_minimal()
+```
+
+#### Continuous features
+
+```{r}
+features <- c("age", "lwt", "ptl", "ftv")
+
+df.long <- pivot_longer(birthwt[, c("low", features)],
+                        cols = -low,
+                        names_to = "feature",
+                        values_to = "value")
+
+ggplot(data = df.long, aes(x = factor(low), y = value, fill = factor(low))) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_wrap(~ feature, scales = "free_y", ncol = 2) +
+  scale_fill_manual(values = c("0" = "#4CAF50", "1" = "#F44336")) +
+  labs(title = "Continuous Feature Distribution by Low Birth Weight",
+       x = "Low Birth Weight (0 = No, 1 = Yes)", 
+       y = "Value") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+#### Categorical features
+
+```{r}
+features.cat <- c("race", "smoke", "ht", "ui")
+
+df.cat <- pivot_longer(birthwt[, c("low", features.cat)],
+                       cols = -low,
+                       names_to = "feature",
+                       values_to = "value")
+
+ggplot(data = df.cat, aes(x = factor(value), fill = factor(low))) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ feature, scales = "free_x", ncol = 2) +
+  scale_fill_manual(values = c("0" = "#4CAF50", "1" = "#F44336"),
+                    labels = c("Normal", "Low Birth Weight")) +
+  labs(title = "Categorical Feature Distribution by Low Birth Weight",
+       x = "Value",
+       y = "Count",
+       fill = "Birth Weight") +
+  theme_minimal()
+```
+
+#### Feature Correlation
+
+```{r}
+features.only <- birthwt[, c("age", "lwt", "ptl", "ftv")]
+corr.matrix   <- cor(features.only)
+
+corrplot::corrplot(corr.matrix,
+                   method     = "color",
+                   type       = "upper",
+                   tl.cex     = 0.7,
+                   tl.col     = "black",
+                   addCoef.col = "black",
+                   number.cex = 0.8,
+                   title      = "Correlation Matrix of Continuous Features",
+                   mar        = c(0, 0, 1, 0))
+```
+
+## 2. Helper Functions
+
+```{r}
+run_stan_glm <- function(data, prior, prior_int) {
+  stan_glm(
+    low ~ age + lwt + race + smoke + ptl + ht + ui + ftv,
+    data            = data,
+    family          = binomial(link = "logit"),
+    prior           = prior,
+    prior_intercept = prior_int,
+    seed            = 42,
+    refresh         = 0
+  )
+}
+```
+
+```{r}
+get_posterior_summary <- function(fit, model_name) {
+  ps <- as.data.frame(fit$stan_summary)
+  ps <- ps[!rownames(ps) %in% c("mean_PPD", "log-posterior"), ]
+  data.frame(
+    Model    = model_name,
+    Variable = rownames(ps),
+    Mean     = round(ps$mean, 3),
+    CI_2.5   = round(ps$`2.5%`, 3),
+    CI_97.5  = round(ps$`97.5%`, 3),
+    OR       = round(exp(ps$mean), 3)
+  )
+}
+```
+
+```{r}
+get_auc <- function(fit, data) {
+  pred      <- colMeans(posterior_epred(fit))
+  roc.obj   <- roc(data$low, pred, quiet = TRUE)
+  as.numeric(auc(roc.obj))
+}
+```
+
+```{r}
+loo_safe <- function(fit) {
+  tryCatch({
+    l      <- suppressWarnings(loo(fit))
+    looic  <- l$estimates["looic", "Estimate"]
+    k_warn <- sum(l$diagnostics$pareto_k > 0.7)
+    list(looic = round(looic, 3), k_warn = k_warn)
+  }, error = function(e) list(looic = NA, k_warn = NA))
+}
+```
+
+# Analysis 1: Prior Sensitivity (Full Data, n = 189)
+
+
+## Prior Specification
+
+
+### Diffuse Prior — N(0, 100)
+
+```{r}
+prior.diffuse <- normal(0, 100)
+prior_int.diffuse <- normal(0, 100)
+fit.diffuse <- run_stan_glm(birthwt, prior.diffuse, prior_int.diffuse)
+```
+
+### Weakly Informative Prior — N(0, 2.5)
+
+```{r}
+prior.weak        <- normal(0, 2.5)
+prior_int.weak    <- normal(0, 10)
+fit.weak          <- run_stan_glm(birthwt, prior.weak, prior_int.weak)
+```
+
+### Clinically Informative Prior
+
+```{r}
+prior.informative <- normal(
+  location = c(0,    # age
+               0,    # lwt
+               0,    # race2
+               0,    # race3
+               1,    # smoke1
+               0,    # ptl
+               1,    # ht1
+               0,    # ui1
+               0),   # ftv
+  scale    = c(1,    # age
+               1,    # lwt
+               1,    # race2
+               1,    # race3
+               0.5,  # smoke1
+               1,    # ptl
+               0.5,  # ht1
+               1,    # ui1
+               1)    # ftv
+)
+prior_int.informative <- normal(0, 5)
+fit.informative       <- run_stan_glm(birthwt, prior.informative, prior_int.informative)
+```
+
+## MCMC Diagnostics
+
+
+### Trace Plots
+
+
+#### Diffuse Prior — N(0, 100)
+
+```{r}
+mcmc_trace(as.array(fit.diffuse),
+           pars = c("age", "lwt", "smoke1", "ht1")) +
+  ggtitle("Trace Plot - Diffuse Prior")
+```
+
+#### Weakly Informative Prior — N(0, 2.5)
+
+```{r}
+mcmc_trace(as.array(fit.weak),
+           pars = c("age", "lwt", "smoke1", "ht1")) +
+  ggtitle("Trace Plot - Weakly Informative Prior")
+```
+
+#### Clinically Informative Prior
+
+```{r}
+mcmc_trace(as.array(fit.informative),
+           pars = c("age", "lwt", "smoke1", "ht1")) +
+  ggtitle("Trace Plot - Clinically Informative Prior")
+```
+
+### Rhat Convergence Summary
+
+```{r}
+result.rhat <- data.frame(
+  Variable    = rownames(fit.diffuse$stan_summary),
+  Rhat_Diffuse     = round(fit.diffuse$stan_summary[, "Rhat"], 3),
+  Rhat_Weak        = round(fit.weak$stan_summary[, "Rhat"], 3),
+  Rhat_Informative = round(fit.informative$stan_summary[, "Rhat"], 3)
+)
+print(result.rhat, row.names = FALSE)
+```
+
+## Posterior Summary
+
+
+### Coefficient Estimates
+
+```{r}
+print(fit.diffuse, digits = 3)
+```
+
+```{r}
+print(fit.weak, digits = 3)
+```
+
+```{r}
+print(fit.informative, digits = 3)
+```
+
+### Coefficient Estimates Across Priors
+
+```{r}
+result.coef.compare <- data.frame(
+  Variable    = names(coef(fit.diffuse)),
+  Diffuse     = round(coef(fit.diffuse), 3),
+  Weak        = round(coef(fit.weak), 3),
+  Informative = round(coef(fit.informative), 3)
+)
+print(result.coef.compare, row.names = FALSE)
+```
+
+```{r}
+result.posterior <- rbind(
+  get_posterior_summary(fit.diffuse,     "Diffuse"),
+  get_posterior_summary(fit.weak,        "Weak"),
+  get_posterior_summary(fit.informative, "Informative")
+)
+print(result.posterior, row.names = FALSE)
+```
+
+### Coefficient Plot  
+
+
+#### Continuous Predictors
+
+```{r}
+df.plot <- result.posterior[result.posterior$Variable != "(Intercept)", ]
+df.plot$Model <- factor(df.plot$Model, levels = c("Diffuse", "Weak", "Informative"))
+
+vars.continuous <- c("age", "lwt", "ftv")
+df.continuous <- df.plot[df.plot$Variable %in% vars.continuous, ]
+
+ggplot(df.continuous, aes(x = Mean, y = Variable, color = Model, shape = Model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(xmin = CI_2.5, xmax = CI_97.5),
+                  position = position_dodge(width = 0.5),
+                  size = 0.5) +
+  scale_color_manual(values = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  scale_shape_manual(values = c("Diffuse" = 16, "Weak" = 17, "Informative" = 15)) +
+  labs(title    = "Posterior Coefficients Across Priors (n = 189) — Continuous Predictors",
+       subtitle = "Point = posterior mean, bars = 95% credible interval",
+       x = "Coefficient (log-odds)", y = NULL,
+       color = "Prior", shape = "Prior") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+#### Categorical / Binary Predictors
+
+```{r}
+vars.binary <- c("race2", "race3", "smoke1", "ptl", "ht1", "ui1")
+df.binary <- df.plot[df.plot$Variable %in% vars.binary, ]
+
+ggplot(df.binary, aes(x = Mean, y = Variable, color = Model, shape = Model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_pointrange(aes(xmin = CI_2.5, xmax = CI_97.5),
+                  position = position_dodge(width = 0.5),
+                  size = 0.5) +
+  scale_color_manual(values = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  scale_shape_manual(values = c("Diffuse" = 16, "Weak" = 17, "Informative" = 15)) +
+  labs(title    = "Posterior Coefficients Across Priors (n = 189) — Categorical Predictors",
+       subtitle = "Point = posterior mean, bars = 95% credible interval",
+       x = "Coefficient (log-odds)", y = NULL,
+       color = "Prior", shape = "Prior") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+### LOO Model Comparison
+
+```{r}
+loo.diffuse     <- loo(fit.diffuse)
+loo.weak        <- loo(fit.weak)
+loo.informative <- loo(fit.informative)
+
+loo.compare <- loo_compare(loo.diffuse, loo.weak, loo.informative)
+
+result.loo <- data.frame(
+  Model    = rownames(loo.compare),
+  elpd_loo = round(loo.compare[, "elpd_loo"], 2),
+  p_loo    = round(loo.compare[, "p_loo"], 2),
+  looic    = round(loo.compare[, "looic"], 2)
+)
+print(result.loo, row.names = FALSE)
+```
+
+### AUC Comparison
+
+```{r}
+result.auc <- data.frame(
+  Model = c("Diffuse", "Weak", "Informative"),
+  AUC   = round(c(
+    get_auc(fit.diffuse,     birthwt),
+    get_auc(fit.weak,        birthwt),
+    get_auc(fit.informative, birthwt)
+  ), 3)
+)
+print(result.auc, row.names = FALSE)
+```
+
+# Analysis 2: Subsampling Experiment
+
+
+## Fit Models Across Sample Sizes
+
+```{r}
+sample.sizes <- c(20, 40, 80, 189)
+results.sub  <- list()
+auc.list     <- list()
+
+for (n in sample.sizes) {
+  set.seed(42)
+  data.sub <- if (n < 189) birthwt[sample(nrow(birthwt), n), ] else birthwt
+
+  fit.sub.diffuse     <- run_stan_glm(data.sub, prior.diffuse,     prior_int.diffuse)
+  fit.sub.weak        <- run_stan_glm(data.sub, prior.weak,        prior_int.weak)
+  fit.sub.informative <- run_stan_glm(data.sub, prior.informative, prior_int.informative)
+
+  # Analysis 2：posterior summary
+  results.sub[[as.character(n)]] <- rbind(
+    get_posterior_summary(fit.sub.diffuse,     "Diffuse"),
+    get_posterior_summary(fit.sub.weak,        "Weak"),
+    get_posterior_summary(fit.sub.informative, "Informative")
+  )
+
+  # Analysis 3：AUC + LOO
+  auc.list[[as.character(n)]] <- data.frame(
+    n      = n,
+    Model  = c("Diffuse", "Weak", "Informative"),
+    AUC    = round(c(
+      get_auc(fit.sub.diffuse,     data.sub),
+      get_auc(fit.sub.weak,        data.sub),
+      get_auc(fit.sub.informative, data.sub)
+    ), 3),
+    LOOIC  = c(
+      loo_safe(fit.sub.diffuse)$looic,
+      loo_safe(fit.sub.weak)$looic,
+      loo_safe(fit.sub.informative)$looic
+    ),
+    k_warn = c(
+      loo_safe(fit.sub.diffuse)$k_warn,
+      loo_safe(fit.sub.weak)$k_warn,
+      loo_safe(fit.sub.informative)$k_warn
+    )
+  )
+  # Save models for app
+  saveRDS(fit.sub.diffuse,     paste0("../models/fit_diffuse_n",     n, ".rds"))
+  saveRDS(fit.sub.weak,        paste0("../models/fit_weak_n",        n, ".rds"))
+  saveRDS(fit.sub.informative, paste0("../models/fit_informative_n", n, ".rds"))
+
+  cat("Done: n =", n, "\n")
+}
+
+df.sub <- do.call(rbind, lapply(names(results.sub), function(n) {
+  df <- results.sub[[n]]; df$n <- as.integer(n); df
+}))
+
+df.auc <- do.call(rbind, auc.list)
+```
+
+## Coefficient Convergence: smoke1 & ui1 & ht1
+
+```{r}
+print(df.sub[df.sub$Variable %in% c("smoke1", "ui1", "ht1"), 
+             c("n", "Model", "Variable", "Mean", "CI_2.5", "CI_97.5")], 
+      row.names = FALSE)
+```
+
+```{r}
+df.smoke <- df.sub[df.sub$Variable == "smoke1", ]
+df.smoke$Model <- factor(df.smoke$Model, levels = c("Diffuse", "Weak", "Informative"))
+df.smoke$n     <- factor(df.smoke$n, levels = c(20, 40, 80, 189))
+
+ggplot(df.smoke, aes(x = n, y = Mean, color = Model, group = Model)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_ribbon(aes(ymin = CI_2.5, ymax = CI_97.5, fill = Model),
+              alpha = 0.15, color = NA) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  scale_fill_manual(values  = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  labs(title    = "Coefficient Convergence — Smoking (smoke1)",
+       subtitle = "Shaded band = 95% credible interval",
+       x = "Sample Size (n)", y = "Coefficient (log-odds)",
+       color = "Prior", fill = "Prior") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+df.ui <- df.sub[df.sub$Variable == "ui1", ]
+df.ui$Model <- factor(df.ui$Model, levels = c("Diffuse", "Weak", "Informative"))
+df.ui$n     <- factor(df.ui$n, levels = c(20, 40, 80, 189))
+
+ggplot(df.ui, aes(x = n, y = Mean, color = Model, group = Model)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_ribbon(aes(ymin = CI_2.5, ymax = CI_97.5, fill = Model),
+              alpha = 0.15, color = NA) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  scale_fill_manual(values  = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  labs(title    = "Coefficient Convergence — Uterine Irritability (ui1)",
+       subtitle = "Shaded band = 95% credible interval",
+       x = "Sample Size (n)", y = "Coefficient (log-odds)",
+       color = "Prior", fill = "Prior") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+df.ht <- df.sub[df.sub$Variable == "ht1", ]
+df.ht$Model <- factor(df.ht$Model, levels = c("Diffuse", "Weak", "Informative"))
+df.ht$n     <- factor(df.ht$n, levels = c(20, 40, 80, 189))
+
+ggplot(df.ht, aes(x = n, y = Mean, color = Model, group = Model)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_ribbon(aes(ymin = CI_2.5, ymax = CI_97.5, fill = Model),
+              alpha = 0.15, color = NA) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  scale_fill_manual(values  = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  labs(title    = "Coefficient Convergence — Hypertension (ht1)",
+       subtitle = "Shaded band = 95% credible interval",
+       x = "Sample Size (n)", y = "Coefficient (log-odds)",
+       color = "Prior", fill = "Prior") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+## Robustness Check: Repeated Subsampling
+
+```{r}
+R             <- 100
+sub.sizes.rep <- c(20, 40, 80)
+track.vars    <- c("smoke1", "ui1", "ht1")
+explode.cut   <- 10
+
+build_formula <- function(data) {
+  terms_all <- c("age","lwt","race","smoke","ptl","ht","ui","ftv")
+  keep <- sapply(terms_all, function(v) {
+    x <- data[[v]]
+    if (is.factor(x)) nlevels(droplevels(x)) >= 2 else length(unique(x)) >= 2
+  })
+  reformulate(terms_all[keep], response = "low")
+}
+
+make_diffuse <- function(form, data) {
+  nm <- colnames(model.matrix(form, data))
+  nm <- nm[nm != "(Intercept)"]
+  normal(location = rep(0, length(nm)), scale = rep(10, length(nm)))
+}
+
+make_weak <- function(form, data) {
+  nm <- colnames(model.matrix(form, data))
+  nm <- nm[nm != "(Intercept)"]
+  normal(location = rep(0, length(nm)), scale = rep(2.5, length(nm)))
+}
+
+make_informative <- function(form, data) {
+  nm <- colnames(model.matrix(form, data))
+  nm <- nm[nm != "(Intercept)"]
+  normal(location = ifelse(nm %in% c("smoke1","ht1"), 1, 0),
+         scale    = ifelse(nm %in% c("smoke1","ht1"), 0.5, 1))
+}
+prior_int.shared <- normal(0, 10)
+
+fit_one <- function(data, form, prior, prior_int) {
+  stan_glm(form, data = data, family = binomial("logit"),
+           prior = prior, prior_intercept = prior_int,
+           seed = 42, refresh = 0)
+}
+
+rep.rows <- list(); k <- 0
+
+for (n in sub.sizes.rep) {
+  for (r in seq_len(R)) {
+    set.seed(n * 1000 + r)
+    data.sub <- droplevels(birthwt[sample(nrow(birthwt), n), , drop = FALSE])
+    form     <- build_formula(data.sub)
+
+    fits <- list(
+      Diffuse     = tryCatch(
+        fit_one(data.sub, form, make_diffuse(form, data.sub),     prior_int.shared),
+        error = function(e) NULL),
+      Weak        = tryCatch(
+        fit_one(data.sub, form, make_weak(form, data.sub),        prior_int.shared),
+        error = function(e) NULL),
+      Informative = tryCatch(
+        fit_one(data.sub, form, make_informative(form, data.sub), prior_int.shared),
+        error = function(e) NULL)
+    )
+
+    for (mdl in names(fits)) {
+      for (v in track.vars) {
+        k   <- k + 1
+        fit <- fits[[mdl]]
+        defined <- !is.null(fit) && (v %in% names(coef(fit)))
+        m   <- if (defined) as.numeric(coef(fit)[v]) else NA_real_
+        rep.rows[[k]] <- data.frame(
+          n        = n,
+          rep      = r,
+          Model    = mdl,
+          Variable = v,
+          Mean     = m,
+          defined  = defined,
+          exploded = isTRUE(abs(m) > explode.cut)
+        )
+      }
+    }
+  }
+  cat("Done repeated subsampling: n =", n, "\n")
+}
+
+df.rep <- do.call(rbind, rep.rows)
+saveRDS(df.rep, "../models/df_rep.rds")
+```
+
+```{r}
+df.rep %>%
+  group_by(n, Model, Variable) %>%
+  summarise(
+    pct_undef   = round(100 * mean(!defined), 1),
+    pct_explode = round(100 * mean(exploded[defined], na.rm = TRUE), 1),  # ← 只看 defined
+    median_mean = round(median(Mean[defined & !exploded], na.rm = TRUE), 2),
+    .groups = "drop"
+  ) %>%
+  filter(Model == "Diffuse") %>% arrange(Variable, n) %>% print(n = Inf)
+```
+
+```{r}
+df.rep %>%
+  filter(Model == "Diffuse") %>%
+  group_by(n, Variable) %>%
+  summarise(
+    n_explode = sum(exploded[defined], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(factor(n), n_explode, color = Variable, group = Variable)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 3) +
+  labs(title = "Diffuse-prior coefficient instability across 100 subsamples",
+     x = "Sample size (n)", 
+     y = "Count of |β| > 10 (of 100 draws)", 
+     color = "Predictor") +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom")
+```
+
+# Analysis 3: Predictive Performance Across Sample Sizes
+
+
+## AUC by Sample Size and Prior
+
+```{r}
+print(df.auc, row.names = FALSE)
+```
+
+```{r}
+df.auc %>%
+  ggplot(aes(factor(n), LOOIC, color = Model, group = Model)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 3) +
+  labs(title = "LOO-CV by Sample Size: Informative Prior Wins",
+       x = "Sample size (n)", y = "LOOIC (lower = better)") +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom")
+```
+
+```{r}
+df.auc %>%
+  ggplot(aes(factor(n), k_warn, color = Model, group = Model)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 3) +
+  labs(title = "Pareto k Diagnostics: Diffuse Prior Unreliable at Small n",
+       x = "Sample size (n)", y = "Count (Pareto k > 0.7)") +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom")
+```
+
+```{r}
+df.auc$Model <- factor(df.auc$Model, levels = c("Diffuse", "Weak", "Informative"))
+df.auc$n     <- factor(df.auc$n, levels = c(20, 40, 80, 189))
+
+ggplot(df.auc, aes(x = n, y = AUC, color = Model, group = Model)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey50") +
+  scale_color_manual(values = c("Diffuse"     = "#E41A1C",
+                                "Weak"        = "#377EB8",
+                                "Informative" = "#4DAF4A")) +
+  scale_y_continuous(limits = c(0.4, 1.0), breaks = seq(0.4, 1.0, 0.1)) +
+  labs(title    = "AUC by Sample Size and Prior",
+       subtitle = "In-sample AUC; dashed line = random classifier",
+       x = "Sample Size (n)", y = "AUC",
+       color = "Prior") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+# Export Models
+
+```{r}
+saveRDS(fit.diffuse,     "../models/fit_diffuse.rds")
+saveRDS(fit.weak,        "../models/fit_weak.rds")
+saveRDS(fit.informative, "../models/fit_informative.rds")
+cat("Models saved.\n")
+```
